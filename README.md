@@ -1,1 +1,1 @@
-## STAT GR5291
+## STAT GR5291 Advanced Data Analysis
