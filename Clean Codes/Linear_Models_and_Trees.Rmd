@@ -1,0 +1,122 @@
+---
+title: "Project"
+author: "Shriniket Buche"
+date: "2023-04-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(sentimentr)
+library(syuzhet)
+library(tree)
+library(randomForest)
+```
+
+## Importing the data
+
+```{r}
+df <- read_csv("updated_youtube_data.csv")
+```
+
+```{r}
+# Perturb likes and dislikes
+eps <- 1e-4
+df$likes <- df$likes + eps
+df$dislikes <- df$dislikes + eps
+```
+
+
+
+Creating new dataset
+
+```{r}
+# Like ratio as our response
+like_ratio <- df$likes / (df$likes + df$dislikes)
+log_ratio <- log(df$likes) - log(df$dislikes)
+
+# Category of video as one predictor
+category <- factor(df$category_name)
+
+# Time it takes to trend as one predictor
+time_to_trend <-
+  as.numeric((as.POSIXct(
+    gsub('\\.', '-', df$trending_date), format = '%y-%d-%m'
+  ) - df$publish_time) / 3600)
+
+# Hour the video was published
+hour <- hour(df$publish_time)
+```
+
+
+```{r}
+# Extracting sentiments using Lexicon based sentiment analysis, syuzhet package
+sentiments <- numeric(nrow(df))
+for(i in 1:nrow(df)){
+  if(i %% 1000 == 0){
+    print(i)
+  }
+  sentiments[i] <- sentiment_by(df$title[i], by = NULL)$ave_sentiment
+}
+```
+
+```{r}
+# Creating new dataset with predictors
+df_new <-
+  tibble(
+    "like_ratio" = like_ratio,
+    "log_ratio" = log_ratio,
+    "category" = category,
+    "time_to_trend" = as.numeric(time_to_trend),
+    "hour" = factor(hour),
+    "sentiment" = sentiments
+  )
+```
+
+## Modelling
+
+## Linear Regression Model
+
+```{r}
+m2 <-
+  lm(log_ratio ~ time_to_trend + hour + sentiment + category, data = df_new)
+summary(m2)
+```
+
+```{r}
+summary(aov(m2))
+```
+
+
+All significant which is good
+
+```{r}
+plot(m2)
+```
+
+Assumptions not that great, normality significantly violated
+
+## Tree based models
+
+```{r}
+df_new <- df_new %>% drop_na()
+m3 <-
+  randomForest(log_ratio ~ time_to_trend + hour + sentiment + category, data = df_new)
+m3
+```
+
+
+```{r}
+varImpPlot(m3)
+```
+
+
+
+
+
+
+
+
+
+

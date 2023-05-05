@@ -1,0 +1,176 @@
+---
+title: "ADA Project GAM"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(forcats)
+library(stringr)
+library(gam)
+library(splines)
+```
+
+```{r}
+#dependent variable: likes/(likes + dislikes)
+#independent variables: 
+#publish time (hour of day), category_id
+```
+
+
+```{r}
+# reading in only unique videos dataset
+us_vids <- read.csv("data.csv")
+# To avoid NA/missing/divide-by-zero issues, we delete these observations
+# There are a relatively small proportion of these, so bias won't be material
+us_vids <- filter(us_vids,!(likes==0|dislikes==0|is.na(likes)|is.na(dislikes)))
+
+us_vids$category_id <- as.numeric(us_vids$category_id)
+us_vids$category_id <- as.character(us_vids$category_id)
+us_vids$comment_count <- as.numeric(us_vids$comment_count)
+head(us_vids)
+dim(us_vids)
+
+
+
+```
+
+```{r}
+# convert publish time to hour of day that the video was uploaded
+head(us_vids$publish_time)
+dates <- strptime(us_vids$publish_time, format = "%Y-%m-%dT%H:%M:%S")
+hours <- as.numeric(format(dates, "%H"))
+ggplot(data.frame(hours)) + geom_histogram(aes(x = hours), binwidth = 1) + ggtitle("Dist. of Publish Hours")
+```
+
+
+```{r}
+
+# create y, dependent variable - the "like ratio"
+y0 <- us_vids$likes / (us_vids$likes + us_vids$dislikes)
+# logistic GAM
+y1 <- log(us_vids$likes / us_vids$dislikes)
+y <- y1
+
+summary(y0)
+# create data, which is an extended version of us_vids dataset that includes hours and y variables
+data <- data.frame(us_vids, y0, hours)
+data
+ggplot(data, aes(y0)) + geom_histogram(bins = 50) + ggtitle("Dist. of y")
+
+summary(y1)
+# create data, which is an extended version of us_vids dataset that includes hours and y variables
+data <- data.frame(us_vids, y1, hours)
+data
+ggplot(data, aes(y1)) + geom_histogram(bins = 50) + ggtitle("Dist. of y")
+
+
+
+qqnorm(data$y, pch = 1, frame = FALSE)
+```
+
+
+
+```{r}
+# graphs of y vs. hours
+ggplot(data) + geom_point(aes(x = hours, y = y), alpha = .2)
+# ggplot(data) + geom_point(aes(x = hours, y = log(y)), alpha = .2)
+ggplot(data) + geom_boxplot(aes(x = as.factor(hours), y = y))
+```
+
+```{r}
+# Creating GAM using hours
+
+
+# Getting estimates
+t <- summary(lm(data$y~as.factor(data$hours)))$coefficients
+t
+t <- data.frame(t)
+t$hour <- as.character(c(0, 1:23))
+t <- t[-1, ]
+range(t$Estimate)
+#Graph of estimates
+ggplot(t) + geom_point(aes(x = fct_inorder(as.factor(hour)), y = Estimate)) + ylim(-.4, .25) + xlab("Hour")
+```
+
+```{r}
+# The GAM with hours
+gam_hours2 <- gam(y ~ bs(hours, knots = c(seq(1, 7, by = 4), seq(8, 12, by = 2)), seq(13, 24, by = 2)), data = t)
+plot(gam_hours2, ylim = c(-.4, .25), xlab = "Hours", ylab = "Estimates")
+points(y = t$Estimate, x = as.numeric(t$hour))
+
+
+```
+
+```{r}
+#looking at trending date, turns out the range is limited
+head((us_vids$trending_date))
+tail(us_vids$trending_date)
+as.Date(us_vids$trending_date)
+d <- strptime(us_vids$trending_date, format = "%y.%d.%m")
+```
+
+
+```{r}
+# Bucketing category_id
+
+# Get estimates
+cate <- summary(lm(y~category_id, data = data))$coefficients
+cate <- data.frame(cate)
+cate$category <- rownames(cate)
+cate <- cate[-1, ]
+cate$category <- as.factor(gsub("category_id", "", cate$category))
+cate
+
+# Graph estimates
+ggplot(cate, aes(x = reorder(category, Estimate), y = Estimate)) + geom_point() + geom_linerange(aes(ymin = Estimate -1 * Std..Error, ymax = Estimate + Std..Error))
+#25 is news and politics
+
+# Divide categories based on previous graph (and context)
+buckets <- rep(NA, length(data$category))
+buckets[data$category_id %in% c("10", "15")] <- "cat1"
+buckets[data$category_id %in% c("27", "26")] <- "cat2"
+buckets[data$category_id %in% c("22", "23")] <- "cat3"
+buckets[data$category_id %in% c("20", "28")] <- "cat4"
+buckets[data$category_id %in% c("43", "1")] <- "cat5"
+buckets[data$category_id %in% c("19", "24")] <- "cat6"
+buckets[data$category_id %in% c("2", "17", "29")] <- "cat7"
+buckets[data$category_id %in% c("25")] <- "cat8"
+head(data.frame(data$category_id, buckets))
+
+# Get estimates using buckets established previously
+buckets <- as.factor(buckets)
+cate2 <- summary(lm(y~buckets))$coefficients
+cate2 <- data.frame(cate2)
+cate2$category <- rownames(cate2)
+cate2 <- cate2[-1, ]
+cate2$category <- as.factor(gsub("buckets", "", cate2$category))
+
+# Graph estimates
+ggplot(cate2, aes(x = reorder(category, Estimate), y = Estimate)) + geom_point() + geom_linerange(aes(ymin = Estimate -1 * Std..Error, ymax = Estimate + Std..Error))
+```
+
+```{r}
+titles <- read.csv("category_id.csv")
+head(titles)
+titles$category_id <- as.factor(titles$category_id)
+titles$category <- titles$category_id
+head(titles)
+head(cate)
+
+cate_titles <- left_join(cate, titles, by = "category")
+cate_titles
+range(cate_titles$Estimate)
+
+
+par(mfrow = c(1, 2))
+ggplot(cate, aes(x = reorder(category, Estimate), y = Estimate)) + geom_point() + geom_linerange(aes(ymin = Estimate -1 * Std..Error, ymax = Estimate + Std..Error))
+
+ggplot(cate_titles, aes(x = reorder(title, Estimate), y = Estimate)) + geom_point() + geom_linerange(aes(ymin = Estimate -1 * Std..Error, ymax = Estimate + Std..Error)) + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+```
+
